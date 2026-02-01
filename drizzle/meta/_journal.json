@@ -1,0 +1,55 @@
+{
+  "version": "7",
+  "dialect": "mysql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "5",
+      "when": 1769884002780,
+      "tag": "0000_boring_venus",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1769884157081,
+      "tag": "0001_common_deadpool",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1769885468637,
+      "tag": "0002_soft_ares",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "5",
+      "when": 1769886440434,
+      "tag": "0003_damp_mysterio",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1769887662247,
+      "tag": "0004_familiar_zarda",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1769889183013,
+      "tag": "0005_colossal_stark_industries",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1769938924678,
+      "tag": "0006_clammy_bill_hollister",
+      "breakpoints": true
+    }
+  ]
+}

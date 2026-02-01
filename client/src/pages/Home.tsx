@@ -1,0 +1,917 @@
+import { useState, useEffect } from "react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { 
+  Bot, 
+  Server, 
+  MessageSquare, 
+  Settings, 
+  Activity,
+  Wifi,
+  Terminal,
+  ExternalLink,
+  Copy,
+  Check,
+  RefreshCw,
+  Cpu,
+  HardDrive,
+  Clock,
+  Send,
+  Plus,
+  Trash2,
+  Sparkles,
+  Zap,
+  Star,
+  Edit2,
+  LogOut,
+  Loader2,
+  Radio,
+  Brain
+} from "lucide-react";
+import { Link } from "wouter";
+import { toast } from "sonner";
+import { motion, AnimatePresence } from "framer-motion";
+import { trpc } from "@/lib/trpc";
+
+// Model type definition
+interface AIModel {
+  id: string;
+  name: string;
+  provider: string;
+  modelId: string;
+  isDefault?: boolean;
+  isCustom?: boolean;
+}
+
+// Default models list
+const defaultModels: AIModel[] = [
+  { id: "1", name: "Auto (Recommended)", provider: "openrouter", modelId: "openrouter/auto", isDefault: true },
+  { id: "2", name: "Claude 3.5 Sonnet", provider: "anthropic", modelId: "openrouter/anthropic/claude-3.5-sonnet" },
+  { id: "3", name: "GPT-4o", provider: "openai", modelId: "openrouter/openai/gpt-4o" },
+  { id: "4", name: "GPT-4o Mini", provider: "openai", modelId: "openrouter/openai/gpt-4o-mini" },
+  { id: "5", name: "Gemini 2.0 Flash", provider: "google", modelId: "openrouter/google/gemini-2.0-flash-exp" },
+  { id: "6", name: "DeepSeek V3", provider: "deepseek", modelId: "openrouter/deepseek/deepseek-chat" },
+];
+
+// Provider options
+const providers = [
+  { value: "openrouter", label: "OpenRouter" },
+  { value: "anthropic", label: "Anthropic" },
+  { value: "openai", label: "OpenAI" },
+  { value: "google", label: "Google" },
+  { value: "deepseek", label: "DeepSeek" },
+  { value: "mistral", label: "Mistral" },
+  { value: "cohere", label: "Cohere" },
+  { value: "custom", label: "Custom" },
+];
+
+// ASCII Art Lobster Logo
+const LobsterLogo = () => (
+  <pre className="text-primary font-mono text-xs leading-tight neon-text-red">
+{`    🦞 OPENCLAW 🦞
+   ╔═══════════════╗
+   ║  ◉        ◉  ║
+   ║    ╲    ╱    ║
+   ║     ╲  ╱     ║
+   ║   ═══════    ║
+   ╚═══════════════╝`}
+  </pre>
+);
+
+// Status indicator component
+const StatusIndicator = ({ online }: { online: boolean }) => (
+  <div className="flex items-center gap-2">
+    <div className={`w-3 h-3 rounded-full ${online ? 'status-online' : 'status-offline'} pulse-glow`} />
+    <span className={`font-mono text-sm ${online ? 'text-green-400 neon-text-green' : 'text-red-400 neon-text-red'}`}>
+      {online ? 'ONLINE' : 'OFFLINE'}
+    </span>
+  </div>
+);
+
+// Terminal output line
+const TerminalLine = ({ prefix, content, type = "info" }: { prefix: string; content: string; type?: "info" | "success" | "error" | "warning" }) => {
+  const colors = {
+    info: "text-foreground",
+    success: "text-green-400",
+    error: "text-red-400",
+    warning: "text-yellow-400"
+  };
+  
+  return (
+    <div className="font-mono text-sm flex gap-2">
+      <span className="text-muted-foreground">{prefix}</span>
+      <span className={colors[type]}>{content}</span>
+    </div>
+  );
+};
+
+// Copy button component
+const CopyButton = ({ text, label }: { text: string; label: string }) => {
+  const [copied, setCopied] = useState(false);
+  
+  const handleCopy = async () => {
+    await navigator.clipboard.writeText(text);
+    setCopied(true);
+    toast.success(`${label} copied to clipboard`);
+    setTimeout(() => setCopied(false), 2000);
+  };
+  
+  return (
+    <Button 
+      variant="ghost" 
+      size="sm" 
+      onClick={handleCopy}
+      className="h-6 px-2 hover:bg-primary/20 hover:text-primary"
+    >
+      {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+    </Button>
+  );
+};
+
+// Model Card Component
+const ModelCard = ({ 
+  model, 
+  isActive, 
+  onSelect, 
+  onDelete,
+  isLoading
+}: { 
+  model: AIModel; 
+  isActive: boolean; 
+  onSelect: () => void; 
+  onDelete?: () => void;
+  isLoading?: boolean;
+}) => {
+  const providerColors: Record<string, string> = {
+    openrouter: "text-purple-400 border-purple-400/30 bg-purple-400/10",
+    anthropic: "text-orange-400 border-orange-400/30 bg-orange-400/10",
+    openai: "text-green-400 border-green-400/30 bg-green-400/10",
+    google: "text-blue-400 border-blue-400/30 bg-blue-400/10",
+    deepseek: "text-cyan-400 border-cyan-400/30 bg-cyan-400/10",
+    mistral: "text-yellow-400 border-yellow-400/30 bg-yellow-400/10",
+    cohere: "text-pink-400 border-pink-400/30 bg-pink-400/10",
+    custom: "text-primary border-primary/30 bg-primary/10",
+  };
+
+  return (
+    <motion.div
+      layout
+      initial={{ opacity: 0, scale: 0.95 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.95 }}
+      className={`
+        relative p-3 rounded-lg border cursor-pointer transition-all duration-200
+        ${isActive 
+          ? 'border-primary bg-primary/10 neon-glow-red' 
+          : 'border-border/50 bg-muted/20 hover:border-primary/50 hover:bg-muted/40'
+        }
+        ${isLoading ? 'opacity-50 pointer-events-none' : ''}
+      `}
+      onClick={onSelect}
+    >
+      {isLoading && (
+        <div className="absolute inset-0 flex items-center justify-center bg-background/50 rounded-lg z-10">
+          <Loader2 className="w-5 h-5 animate-spin text-primary" />
+        </div>
+      )}
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-1">
+            {isActive && <Zap className="w-3 h-3 text-primary shrink-0" />}
+            <span className="font-mono text-sm text-foreground truncate">{model.name}</span>
+            {model.isDefault && (
+              <Star className="w-3 h-3 text-yellow-400 shrink-0" />
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <Badge variant="outline" className={`text-xs ${providerColors[model.provider] || providerColors.custom}`}>
+              {model.provider}
+            </Badge>
+            {model.isCustom && (
+              <Badge variant="outline" className="text-xs border-primary/30 text-primary bg-primary/10">
+                Custom
+              </Badge>
+            )}
+          </div>
+          <code className="text-xs text-muted-foreground font-mono mt-1 block truncate">
+            {model.modelId}
+          </code>
+        </div>
+        {model.isCustom && onDelete && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 w-6 p-0 hover:bg-destructive/20 hover:text-destructive shrink-0"
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete();
+            }}
+          >
+            <Trash2 className="w-3 h-3" />
+          </Button>
+        )}
+      </div>
+    </motion.div>
+  );
+};
+
+// Add Model Dialog Component
+const AddModelDialog = ({ 
+  onAdd, 
+  open, 
+  onOpenChange,
+  isLoading
+}: { 
+  onAdd: (model: Omit<AIModel, 'id'>) => void;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  isLoading?: boolean;
+}) => {
+  const [name, setName] = useState("");
+  const [provider, setProvider] = useState("");
+  const [modelId, setModelId] = useState("");
+
+  const handleSubmit = () => {
+    if (!name.trim() || !provider || !modelId.trim()) {
+      toast.error("Please fill in all fields");
+      return;
+    }
+
+    onAdd({
+      name: name.trim(),
+      provider,
+      modelId: modelId.trim(),
+      isCustom: true,
+    });
+
+    // Reset form
+    setName("");
+    setProvider("");
+    setModelId("");
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="bg-card border-border">
+        <DialogHeader>
+          <DialogTitle className="font-mono text-primary flex items-center gap-2">
+            <Plus className="w-5 h-5" />
+            Add Custom Model
+          </DialogTitle>
+          <DialogDescription className="text-muted-foreground">
+            Add a custom AI model to your OpenClaw configuration. The model will be saved and available for selection.
+          </DialogDescription>
+        </DialogHeader>
+        
+        <div className="space-y-4 py-4">
+          <div className="space-y-2">
+            <Label htmlFor="name" className="font-mono text-sm">Model Name</Label>
+            <Input
+              id="name"
+              placeholder="e.g., My Custom Model"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="bg-muted/30 border-border font-mono"
+            />
+          </div>
+          
+          <div className="space-y-2">
+            <Label htmlFor="provider" className="font-mono text-sm">Provider</Label>
+            <Select value={provider} onValueChange={setProvider}>
+              <SelectTrigger className="bg-muted/30 border-border font-mono">
+                <SelectValue placeholder="Select a provider" />
+              </SelectTrigger>
+              <SelectContent className="bg-card border-border">
+                {providers.map((p) => (
+                  <SelectItem key={p.value} value={p.value} className="font-mono">
+                    {p.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          
+          <div className="space-y-2">
+            <Label htmlFor="modelId" className="font-mono text-sm">Model ID</Label>
+            <Input
+              id="modelId"
+              placeholder="e.g., openrouter/anthropic/claude-3-opus"
+              value={modelId}
+              onChange={(e) => setModelId(e.target.value)}
+              className="bg-muted/30 border-border font-mono"
+            />
+            <p className="text-xs text-muted-foreground">
+              For OpenRouter models, use format: openrouter/provider/model-name
+            </p>
+          </div>
+        </div>
+        
+        <DialogFooter>
+          <Button 
+            variant="outline" 
+            onClick={() => onOpenChange(false)}
+            className="border-border"
+          >
+            Cancel
+          </Button>
+          <Button 
+            onClick={handleSubmit}
+            className="bg-primary hover:bg-primary/80"
+            disabled={isLoading}
+          >
+            {isLoading ? (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <Plus className="w-4 h-4 mr-2" />
+            )}
+            Add Model
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
+interface HomeProps {
+  onLogout?: () => void;
+}
+
+export default function Home({ onLogout }: HomeProps) {
+  const [isOnline, setIsOnline] = useState(true);
+  const [uptime, setUptime] = useState("0h 0m 0s");
+  const [currentTime, setCurrentTime] = useState(new Date());
+  const [models, setModels] = useState<AIModel[]>(defaultModels);
+  const [activeModelId, setActiveModelId] = useState("1");
+  const [isAddModelOpen, setIsAddModelOpen] = useState(false);
+  const [switchingModelId, setSwitchingModelId] = useState<string | null>(null);
+  
+  // Gateway configuration (example values - replace with your own)
+  const gatewayConfig = {
+    localUrl: "ws://127.0.0.1:18789",
+    publicUrl: "https://your-gateway-url.example.com",
+    token: "your-gateway-token-here",
+    telegramBot: "@your_bot_username",
+    port: 18789
+  };
+
+  // tRPC queries and mutations
+  const activeModelQuery = trpc.models.getActive.useQuery(undefined, {
+    refetchOnWindowFocus: false,
+  });
+  
+  const setActiveModelMutation = trpc.models.setActive.useMutation({
+    onSuccess: (data) => {
+      toast.success(`Model switched to ${models.find(m => m.modelId === data.modelId)?.name || data.modelId}`);
+      activeModelQuery.refetch();
+    },
+    onError: (error) => {
+      toast.error(`Failed to switch model: ${error.message}`);
+    },
+    onSettled: () => {
+      setSwitchingModelId(null);
+    }
+  });
+
+  const customModelsQuery = trpc.models.listCustom.useQuery(undefined, {
+    refetchOnWindowFocus: false,
+  });
+
+  const addCustomModelMutation = trpc.models.addCustom.useMutation({
+    onSuccess: () => {
+      toast.success("Custom model added");
+      customModelsQuery.refetch();
+      setIsAddModelOpen(false);
+    },
+    onError: (error) => {
+      toast.error(`Failed to add model: ${error.message}`);
+    }
+  });
+
+  const deleteCustomModelMutation = trpc.models.deleteCustom.useMutation({
+    onSuccess: () => {
+      toast.success("Model removed");
+      customModelsQuery.refetch();
+    },
+    onError: (error) => {
+      toast.error(`Failed to delete model: ${error.message}`);
+    }
+  });
+
+  // Combine default models with custom models from database
+  useEffect(() => {
+    if (customModelsQuery.data) {
+      const customModelsFromDb: AIModel[] = customModelsQuery.data.map(m => ({
+        id: `custom-${m.id}`,
+        name: m.name,
+        provider: m.provider,
+        modelId: m.modelId,
+        isCustom: true,
+      }));
+      setModels([...defaultModels, ...customModelsFromDb]);
+    }
+  }, [customModelsQuery.data]);
+
+  // Set active model based on server response
+  useEffect(() => {
+    if (activeModelQuery.data?.modelId) {
+      const activeModel = models.find(m => m.modelId === activeModelQuery.data.modelId);
+      if (activeModel) {
+        setActiveModelId(activeModel.id);
+      }
+    }
+  }, [activeModelQuery.data, models]);
+
+  const activeModel = models.find(m => m.id === activeModelId);
+
+  // Update time every second
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // Simulate uptime counter
+  useEffect(() => {
+    const startTime = Date.now();
+    const timer = setInterval(() => {
+      const elapsed = Date.now() - startTime;
+      const hours = Math.floor(elapsed / 3600000);
+      const minutes = Math.floor((elapsed % 3600000) / 60000);
+      const seconds = Math.floor((elapsed % 60000) / 1000);
+      setUptime(`${hours}h ${minutes}m ${seconds}s`);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const handleRefresh = () => {
+    toast.info("Refreshing gateway status...");
+    activeModelQuery.refetch();
+    customModelsQuery.refetch();
+    setTimeout(() => {
+      toast.success("Gateway status updated");
+    }, 1000);
+  };
+
+  const handleAddModel = (model: Omit<AIModel, 'id'>) => {
+    addCustomModelMutation.mutate({
+      name: model.name,
+      provider: model.provider,
+      modelId: model.modelId,
+    });
+  };
+
+  const handleDeleteModel = (id: string) => {
+    // Extract the numeric ID from custom-{id}
+    const numericId = parseInt(id.replace('custom-', ''));
+    if (!isNaN(numericId)) {
+      deleteCustomModelMutation.mutate({ id: numericId });
+    }
+    
+    if (activeModelId === id) {
+      setActiveModelId("1"); // Reset to default
+    }
+  };
+
+  const handleSelectModel = (id: string) => {
+    const model = models.find(m => m.id === id);
+    if (model) {
+      setSwitchingModelId(id);
+      setActiveModelMutation.mutate({ modelId: model.modelId });
+      setActiveModelId(id);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-background">
+      {/* Scanlines overlay */}
+      <div className="scanlines" />
+      
+      {/* Header */}
+      <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-40">
+        <div className="container py-2 sm:py-3 md:py-4">
+          {/* Mobile Header - Single Row */}
+          <div className="flex items-center justify-between gap-2 sm:hidden">
+            <div className="flex items-center gap-2 min-w-0 flex-1">
+              <span className="text-primary text-xl shrink-0">🦞</span>
+              <span className="font-mono text-sm font-bold text-primary truncate">OPENCLAW</span>
+            </div>
+            <div className="flex items-center gap-1 shrink-0">
+              <div className={`w-2 h-2 rounded-full ${isOnline ? 'bg-green-400' : 'bg-red-400'}`} />
+              <Button 
+                variant="ghost" 
+                size="icon"
+                onClick={handleRefresh}
+                className="h-8 w-8 text-primary"
+              >
+                <RefreshCw className="w-4 h-4" />
+              </Button>
+              {onLogout && (
+                <Button 
+                  variant="ghost" 
+                  size="icon"
+                  onClick={onLogout}
+                  className="h-8 w-8 text-red-400"
+                >
+                  <LogOut className="w-4 h-4" />
+                </Button>
+              )}
+            </div>
+          </div>
+          
+          {/* Desktop/Tablet Header */}
+          <div className="hidden sm:flex sm:items-center sm:justify-between gap-4">
+            {/* Logo and Title */}
+            <div className="flex items-center gap-4">
+              <motion.div
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.5 }}
+                className="hidden md:block"
+              >
+                <LobsterLogo />
+              </motion.div>
+              {/* Tablet Logo */}
+              <div className="md:hidden text-primary font-mono text-2xl">🦞</div>
+              <div>
+                <h1 className="text-xl md:text-2xl font-bold font-mono text-primary neon-text-red">
+                  OPENCLAW DASHBOARD
+                </h1>
+                <p className="text-sm text-muted-foreground font-mono">
+                  Personal AI Assistant Control Panel
+                </p>
+              </div>
+            </div>
+            {/* Actions */}
+            <div className="flex items-center gap-3 md:gap-4">
+              <StatusIndicator online={isOnline} />
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={handleRefresh}
+                className="border-primary/50 hover:border-primary hover:bg-primary/10"
+              >
+                <RefreshCw className="w-4 h-4 mr-2" />
+                Refresh
+              </Button>
+              {onLogout && (
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={onLogout}
+                  className="border-red-500/50 hover:border-red-500 hover:bg-red-500/10 text-red-400"
+                >
+                  <LogOut className="w-4 h-4 mr-2" />
+                  Logout
+                </Button>
+              )}
+            </div>
+          </div>
+        </div>
+      </header>
+
+      {/* Main Content */}
+      <main className="container py-8">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Left Column */}
+          <div className="lg:col-span-2 space-y-6">
+            {/* Gateway Status Card */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5 }}
+            >
+              <Card className="terminal-card">
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="flex items-center gap-2 font-mono text-lg">
+                      <Server className="w-5 h-5 text-primary" />
+                      GATEWAY STATUS
+                    </CardTitle>
+                    <Badge variant="outline" className="border-green-400/50 text-green-400 bg-green-400/10">
+                      RUNNING
+                    </Badge>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="space-y-1">
+                      <span className="text-xs text-muted-foreground font-mono">PORT</span>
+                      <p className="text-lg font-mono text-accent">{gatewayConfig.port}</p>
+                    </div>
+                    <div className="space-y-1">
+                      <span className="text-xs text-muted-foreground font-mono">UPTIME</span>
+                      <p className="text-lg font-mono text-green-400">{uptime}</p>
+                    </div>
+                    <div className="space-y-1">
+                      <span className="text-xs text-muted-foreground font-mono">MODEL</span>
+                      <p className="text-lg font-mono text-purple-400 truncate">{activeModel?.modelId.split('/').pop() || 'auto'}</p>
+                    </div>
+                    <div className="space-y-1">
+                      <span className="text-xs text-muted-foreground font-mono">AUTH</span>
+                      <p className="text-lg font-mono text-yellow-400">TOKEN</p>
+                    </div>
+                  </div>
+                  
+                  <Separator className="bg-border/50" />
+                  
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between p-3 bg-muted/30 rounded-md">
+                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                        <Terminal className="w-4 h-4 text-muted-foreground shrink-0" />
+                        <span className="text-xs text-muted-foreground font-mono">LOCAL:</span>
+                        <code className="text-sm font-mono text-foreground truncate">{gatewayConfig.localUrl}</code>
+                      </div>
+                      <CopyButton text={gatewayConfig.localUrl} label="Local URL" />
+                    </div>
+                    
+                    <div className="flex items-center justify-between p-3 bg-muted/30 rounded-md">
+                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                        <Wifi className="w-4 h-4 text-accent shrink-0" />
+                        <span className="text-xs text-muted-foreground font-mono">PUBLIC:</span>
+                        <code className="text-sm font-mono text-accent truncate">{gatewayConfig.publicUrl}</code>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <CopyButton text={gatewayConfig.publicUrl} label="Public URL" />
+                        <Button 
+                          variant="ghost" 
+                          size="sm"
+                          className="h-6 px-2 hover:bg-accent/20 hover:text-accent"
+                          onClick={() => window.open(gatewayConfig.publicUrl, '_blank')}
+                        >
+                          <ExternalLink className="w-3 h-3" />
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </motion.div>
+
+            {/* AI Models Card */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 0.15 }}
+            >
+              <Card className="terminal-card">
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="flex items-center gap-2 font-mono text-lg">
+                      <Sparkles className="w-5 h-5 text-purple-400" />
+                      AI MODELS
+                      {(activeModelQuery.isLoading || customModelsQuery.isLoading) && (
+                        <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+                      )}
+                    </CardTitle>
+                    <Button
+                      size="sm"
+                      onClick={() => setIsAddModelOpen(true)}
+                      className="bg-primary/20 hover:bg-primary/30 text-primary border border-primary/50"
+                    >
+                      <Plus className="w-4 h-4 mr-2" />
+                      Add Custom
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <AnimatePresence mode="popLayout">
+                      {models.map((model) => (
+                        <ModelCard
+                          key={model.id}
+                          model={model}
+                          isActive={model.id === activeModelId}
+                          onSelect={() => handleSelectModel(model.id)}
+                          onDelete={model.isCustom ? () => handleDeleteModel(model.id) : undefined}
+                          isLoading={switchingModelId === model.id}
+                        />
+                      ))}
+                    </AnimatePresence>
+                  </div>
+                  
+                  <div className="mt-4 p-3 bg-muted/20 rounded-md border border-border/50">
+                    <div className="flex items-center gap-2 text-sm">
+                      <Zap className="w-4 h-4 text-primary" />
+                      <span className="text-muted-foreground">Active Model:</span>
+                      <span className="font-mono text-primary">{activeModel?.name}</span>
+                      {setActiveModelMutation.isPending && (
+                        <Loader2 className="w-3 h-3 animate-spin text-muted-foreground ml-2" />
+                      )}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </motion.div>
+
+            {/* Telegram Bot Card */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 0.2 }}
+            >
+              <Card className="terminal-card">
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="flex items-center gap-2 font-mono text-lg">
+                      <Send className="w-5 h-5 text-accent" />
+                      TELEGRAM CHANNEL
+                    </CardTitle>
+                    <Badge variant="outline" className="border-accent/50 text-accent bg-accent/10">
+                      CONNECTED
+                    </Badge>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="flex items-center justify-between p-4 bg-gradient-to-r from-accent/10 to-transparent rounded-lg border border-accent/20">
+                    <div className="flex items-center gap-4">
+                      <div className="w-12 h-12 rounded-full bg-accent/20 flex items-center justify-center">
+                        <Bot className="w-6 h-6 text-accent" />
+                      </div>
+                      <div>
+                        <p className="font-mono text-lg text-accent">{gatewayConfig.telegramBot}</p>
+                        <p className="text-xs text-muted-foreground">DM Policy: OPEN</p>
+                      </div>
+                    </div>
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      className="border-accent/50 hover:border-accent hover:bg-accent/10 text-accent"
+                      onClick={() => window.open(`https://t.me/${gatewayConfig.telegramBot.replace('@', '')}`, '_blank')}
+                    >
+                      <ExternalLink className="w-4 h-4 mr-2" />
+                      Open Chat
+                    </Button>
+                  </div>
+                  
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="p-3 bg-muted/20 rounded-lg text-center">
+                      <p className="text-2xl font-mono text-foreground">0</p>
+                      <p className="text-xs text-muted-foreground">Sessions</p>
+                    </div>
+                    <div className="p-3 bg-muted/20 rounded-lg text-center">
+                      <p className="text-2xl font-mono text-foreground">8</p>
+                      <p className="text-xs text-muted-foreground">Skills</p>
+                    </div>
+                    <div className="p-3 bg-muted/20 rounded-lg text-center">
+                      <p className="text-2xl font-mono text-foreground">2</p>
+                      <p className="text-xs text-muted-foreground">Plugins</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </motion.div>
+
+            {/* System Log Card */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 0.25 }}
+            >
+              <Card className="terminal-card">
+                <CardHeader className="pb-3">
+                  <CardTitle className="flex items-center gap-2 font-mono text-lg">
+                    <Terminal className="w-5 h-5 text-green-400" />
+                    SYSTEM LOG
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="bg-muted/30 rounded-lg p-4 font-mono text-sm space-y-1 max-h-48 overflow-y-auto">
+                    <TerminalLine prefix="[gateway]" content="listening on ws://0.0.0.0:18789" type="success" />
+                    <TerminalLine prefix="[telegram]" content={`starting provider (${gatewayConfig.telegramBot})`} type="info" />
+                    <TerminalLine prefix="[heartbeat]" content="started" type="success" />
+                    <TerminalLine prefix="[browser]" content="Browser control service ready" type="info" />
+                    <TerminalLine prefix="[skills]" content="Eligible: 8 | Missing: 41 | Blocked: 0" type="warning" />
+                    <TerminalLine prefix="[plugins]" content="Loaded: 2 | Disabled: 28" type="info" />
+                    <TerminalLine prefix="[gateway]" content={`agent model: ${activeModel?.modelId || 'openrouter/auto'}`} type="success" />
+                  </div>
+                </CardContent>
+              </Card>
+            </motion.div>
+          </div>
+
+          {/* Right Column */}
+          <div className="space-y-6">
+            {/* System Info Card */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 0.1 }}
+            >
+              <Card className="terminal-card">
+                <CardHeader className="pb-3">
+                  <CardTitle className="flex items-center gap-2 font-mono text-lg">
+                    <Settings className="w-5 h-5 text-muted-foreground" />
+                    SYSTEM INFO
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-muted-foreground">OS</span>
+                    <span className="font-mono text-sm">Linux 6.1.102</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-muted-foreground">Node</span>
+                    <span className="font-mono text-sm text-green-400">v22.13.0</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-muted-foreground">Version</span>
+                    <span className="font-mono text-sm text-accent">2026.1.30</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-muted-foreground">Channel</span>
+                    <span className="font-mono text-sm">dev (main)</span>
+                  </div>
+                  <Separator className="bg-border/50" />
+                  <div className="flex items-center gap-2 text-sm">
+                    <Clock className="w-4 h-4 text-muted-foreground" />
+                    <span className="font-mono">{currentTime.toLocaleTimeString()}</span>
+                  </div>
+                </CardContent>
+              </Card>
+            </motion.div>
+
+            {/* Gateway Token Card */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 0.2 }}
+            >
+              <Card className="terminal-card">
+                <CardHeader className="pb-3">
+                  <CardTitle className="flex items-center gap-2 font-mono text-lg">
+                    <Settings className="w-5 h-5 text-yellow-400" />
+                    GATEWAY TOKEN
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-muted-foreground font-mono">AUTH TOKEN</span>
+                    <CopyButton text={gatewayConfig.token} label="Gateway Token" />
+                  </div>
+                  <div className="p-3 bg-muted/30 rounded-md">
+                    <code className="text-xs font-mono text-yellow-400 break-all">
+                      {gatewayConfig.token}
+                    </code>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Use this token to connect remote clients to the gateway.
+                  </p>
+                </CardContent>
+              </Card>
+            </motion.div>
+
+            {/* Heartbeat Status */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 0.35 }}
+            >
+              <Card className="terminal-card border-green-400/20">
+                <CardContent className="py-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Activity className="w-5 h-5 text-green-400" />
+                      <span className="font-mono text-sm text-green-400">Heartbeat Active</span>
+                    </div>
+                    <Badge variant="outline" className="border-green-400/30 text-green-400 text-xs">
+                      Interval: 30 minutes
+                    </Badge>
+                  </div>
+                </CardContent>
+              </Card>
+            </motion.div>
+          </div>
+        </div>
+      </main>
+
+      {/* Add Model Dialog */}
+      <AddModelDialog 
+        open={isAddModelOpen} 
+        onOpenChange={setIsAddModelOpen}
+        onAdd={handleAddModel}
+        isLoading={addCustomModelMutation.isPending}
+      />
+    </div>
+  );
+}
